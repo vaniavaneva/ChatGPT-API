@@ -1,92 +1,97 @@
 package org.example;
 
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.Properties;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Properties;
+
 public class ChatGPTApiClient {
 
-    private static Properties config = new Properties();
+    private final String apiKey;
+    private final Properties config = new Properties();
 
-    // Load configuration once when the class is loaded
-    static {
-        try (InputStream input = ChatGPTApiClient.class
+    public ChatGPTApiClient(String apiKey) {
+        this.apiKey = apiKey;
+
+        try (InputStream input = getClass()
                 .getClassLoader()
                 .getResourceAsStream("config.properties")) {
-
-            if (input == null) {
-                throw new FileNotFoundException("config.properties not found in resources folder");
+            if (input != null) {
+                config.load(new InputStreamReader(input, StandardCharsets.UTF_8));
             }
-
-            config.load(input);
-        } catch (IOException ex) {
-            ex.printStackTrace();
+        } catch (IOException e) {
+            System.err.println("Warning: could not load config.properties: " + e.getMessage());
         }
     }
 
-    public static void chatGPT(String text) throws Exception {
-        // Load values from config.properties
-        String apiKey = config.getProperty("api.key");
-        String apiUrl = config.getProperty("api.url");
-        String model = config.getProperty("api.model");
-        double temperature = Double.parseDouble(config.getProperty("api.temperature", "0.7"));
-        int maxTokens = Integer.parseInt(config.getProperty("api.max_tokens", "500"));
+    /**
+     * Sends a chat request and returns only the assistant message or the readable error message.
+     */
+    public String sendMessage(String model,
+                              String prompt,
+                              String url,
+                              double temperature,
+                              int maxTokens) throws IOException {
 
-        // Create connection
-        HttpURLConnection con = (HttpURLConnection) new URL(apiUrl).openConnection();
+        if (model == null || model.isEmpty())
+            model = config.getProperty("default.model", "gpt-4o-mini");
+
+        if (url == null || url.isEmpty())
+            url = config.getProperty("base.url", "https://api.openai.com/v1/chat/completions");
+
+        JSONObject body = new JSONObject();
+        JSONArray messages = new JSONArray()
+                .put(new JSONObject().put("role", "user").put("content", prompt));
+
+        body.put("model", model);
+        body.put("messages", messages);
+        body.put("temperature", temperature);
+        body.put("max_tokens", maxTokens);
+
+        HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
         con.setRequestMethod("POST");
         con.setRequestProperty("Content-Type", "application/json");
         con.setRequestProperty("Authorization", "Bearer " + apiKey);
-
-        // Build JSON request
-        JSONObject message = new JSONObject();
-        message.put("role", "user");
-        message.put("content", text);
-
-        JSONArray messages = new JSONArray();
-        messages.put(message);
-
-        JSONObject data = new JSONObject();
-        data.put("model", model);
-        data.put("messages", messages);
-        data.put("temperature", temperature);
-        data.put("max_tokens", maxTokens);
-
-        // Send request
         con.setDoOutput(true);
+
         try (OutputStream os = con.getOutputStream()) {
-            os.write(data.toString().getBytes());
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
         }
 
-        // Read response
         int status = con.getResponseCode();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(
-                status == 200 ? con.getInputStream() : con.getErrorStream()
-        ));
+        InputStream inputStream = (status == 200) ? con.getInputStream() : con.getErrorStream();
 
         StringBuilder response = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            response.append(line);
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
         }
-        reader.close();
+
+        String responseText = response.toString();
 
         if (status == 200) {
-            JSONObject obj = new JSONObject(response.toString());
-            String reply = obj.getJSONArray("choices")
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .getString("content");
-            System.out.println("ChatGPT: " + reply);
+            JSONObject json = new JSONObject(responseText);
+            JSONArray choices = json.optJSONArray("choices");
+            if (choices == null || choices.isEmpty()) {
+                return "(No response from API)";
+            }
+            JSONObject message = choices.getJSONObject(0).getJSONObject("message");
+            return message.optString("content", "(Empty message)").trim();
         } else {
-            System.out.println("Error: " + status + " " + response);
+            try {
+                JSONObject errJson = new JSONObject(responseText);
+                JSONObject errorObj = errJson.optJSONObject("error");
+                if (errorObj != null && errorObj.has("message")) {
+                    return errorObj.getString("message");
+                }
+            } catch (Exception ignored) {}
+            return "API error (" + status + ")";
         }
-    }
-
-    public static void main(String[] args) throws Exception {
-        chatGPT("Hello, how are you?");
     }
 }
