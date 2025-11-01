@@ -11,12 +11,14 @@ import java.util.Properties;
 
 public class ChatGPTApiClient {
 
-    private final String apiKey;
-    private final Properties config = new Properties();
+    private final String apiKey; // Stores API key
+    private final Properties config = new Properties(); // default settings from config.properties
 
+    // Constructor loads config file if available
     public ChatGPTApiClient(String apiKey) {
         this.apiKey = apiKey;
 
+        // Attempt to load config.properties from resources
         try (InputStream input = getClass()
                 .getClassLoader()
                 .getResourceAsStream("config.properties")) {
@@ -28,40 +30,52 @@ public class ChatGPTApiClient {
         }
     }
 
+    // Sends a message to the API and returns response
     public String sendMessage(String model,
                               String prompt,
                               String url,
                               double temperature,
                               int maxTokens) throws IOException {
 
+        // Use defaults if params missing
         if (model == null || model.isEmpty())
             model = config.getProperty("default.model", "gpt-4o-mini");
 
         if (url == null || url.isEmpty())
             url = config.getProperty("base.url", "https://api.openai.com/v1/chat/completions");
 
+        // Build request body
         JSONObject body = new JSONObject();
+
+        // Construct the messages array with a single "user" message
         JSONArray messages = new JSONArray()
                 .put(new JSONObject().put("role", "user").put("content", prompt));
 
+        // Fill fields
         body.put("model", model);
         body.put("messages", messages);
         body.put("temperature", temperature);
         body.put("max_tokens", maxTokens);
 
+        // Open HTTP connection to API
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
-        con.setRequestMethod("POST");
-        con.setRequestProperty("Content-Type", "application/json");
-        con.setRequestProperty("Authorization", "Bearer " + apiKey);
-        con.setDoOutput(true);
+        con.setRequestMethod("POST");                                  // POST request
+        con.setRequestProperty("Content-Type", "application/json");     // JSON body
+        con.setRequestProperty("Authorization", "Bearer " + apiKey);    // API key in header
+        con.setDoOutput(true);                                          // Enable writing body
 
+        // Send JSON body
         try (OutputStream os = con.getOutputStream()) {
             os.write(body.toString().getBytes(StandardCharsets.UTF_8));
         }
 
+        // Get HTTP status code
         int status = con.getResponseCode();
+
+        // Choose stream on success/failure
         InputStream inputStream = (status == 200) ? con.getInputStream() : con.getErrorStream();
 
+        // Read response into StringBuilder
         StringBuilder response = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             String line;
@@ -72,15 +86,21 @@ public class ChatGPTApiClient {
 
         String responseText = response.toString();
 
+        // If successful (status 200) extract message content
         if (status == 200) {
             JSONObject json = new JSONObject(responseText);
             JSONArray choices = json.optJSONArray("choices");
+
             if (choices == null || choices.isEmpty()) {
                 return "(No response from API)";
             }
+
+            // Get first choice and message text
             JSONObject message = choices.getJSONObject(0).getJSONObject("message");
             return message.optString("content", "(Empty message)").trim();
+
         } else {
+            // If not successful try to parse error message
             try {
                 JSONObject errJson = new JSONObject(responseText);
                 JSONObject errorObj = errJson.optJSONObject("error");
@@ -88,6 +108,8 @@ public class ChatGPTApiClient {
                     return errorObj.getString("message");
                 }
             } catch (Exception ignored) {}
+
+            // Message if no JSON error
             return "API error (" + status + ")";
         }
     }
