@@ -28,9 +28,6 @@ public class ChatGPTApiClient {
         }
     }
 
-    /**
-     * Sends a chat request and returns only the assistant message or the readable error message.
-     */
     public String sendMessage(String model,
                               String prompt,
                               String url,

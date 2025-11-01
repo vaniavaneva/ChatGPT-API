@@ -99,7 +99,6 @@ public class ChatGPTGui {
     private void attachHandlers() {
         sendButton.addActionListener(e -> sendMessage());
 
-        // ✅ Clear both the response and the prompt input
         clearButton.addActionListener(e -> {
             responsePane.setText("");
             promptText.setText("");
@@ -136,10 +135,8 @@ public class ChatGPTGui {
         new Thread(() -> {
             try {
                 String reply = apiClient.sendMessage(model, prompt, url, temp, tokens);
-                // ✅ Show only the assistant's message (clean text)
                 setResponseText(reply + "\n");
             } catch (Exception ex) {
-                // ✅ Show only the readable error message
                 setResponseText(ex.getMessage() + "\n");
             } finally {
                 SwingUtilities.invokeLater(() -> sendButton.setEnabled(true));
