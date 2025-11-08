@@ -196,7 +196,7 @@ public class ChatGPTGui {
             frame.setContentPane(gui.getRootPanel());
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.pack();
-            frame.setSize(500, 400);
+            frame.setSize(600, 350);
             frame.setLocationRelativeTo(null); // Center window
             frame.setVisible(true);
         });
