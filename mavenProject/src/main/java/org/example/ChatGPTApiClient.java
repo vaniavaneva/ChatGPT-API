@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
@@ -57,60 +58,73 @@ public class ChatGPTApiClient {
         body.put("temperature", temperature);
         body.put("max_tokens", maxTokens);
 
-        // Open HTTP connection to API
-        HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
-        con.setRequestMethod("POST");                                  // POST request
-        con.setRequestProperty("Content-Type", "application/json");     // JSON body
-        con.setRequestProperty("Authorization", "Bearer " + apiKey);    // API key in header
-        con.setDoOutput(true);                                          // Enable writing body
+        try {
+            // Open HTTP connection to API
+            HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+            con.setRequestMethod("POST");                                  // POST request
+            con.setRequestProperty("Content-Type", "application/json");     // JSON body
+            con.setRequestProperty("Authorization", "Bearer " + apiKey);    // API key in header
+            con.setDoOutput(true);                                          // Enable writing body
 
-        // Send JSON body
-        try (OutputStream os = con.getOutputStream()) {
-            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-        }
-
-        // Get HTTP status code
-        int status = con.getResponseCode();
-
-        // Choose stream on success/failure
-        InputStream inputStream = (status == 200) ? con.getInputStream() : con.getErrorStream();
-
-        // Read response into StringBuilder
-        StringBuilder response = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-        }
-
-        String responseText = response.toString();
-
-        // If successful (status 200) extract message content
-        if (status == 200) {
-            JSONObject json = new JSONObject(responseText);
-            JSONArray choices = json.optJSONArray("choices");
-
-            if (choices == null || choices.isEmpty()) {
-                return "(No response from API)";
+            // Send JSON body
+            try (OutputStream os = con.getOutputStream()) {
+                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
 
-            // Get first choice and message text
-            JSONObject message = choices.getJSONObject(0).getJSONObject("message");
-            return message.optString("content", "(Empty message)").trim();
+            // Get HTTP status code
+            int status = con.getResponseCode();
 
-        } else {
-            // If not successful try to parse error message
-            try {
-                JSONObject errJson = new JSONObject(responseText);
-                JSONObject errorObj = errJson.optJSONObject("error");
-                if (errorObj != null && errorObj.has("message")) {
-                    return errorObj.getString("message");
+            // Choose stream on success/failure
+            InputStream inputStream = (status == 200) ? con.getInputStream() : con.getErrorStream();
+
+            // Read response into StringBuilder
+            StringBuilder response = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
                 }
-            } catch (Exception ignored) {}
+            }
 
-            // Message if no JSON error
-            return "API error (" + status + ")";
+            String responseText = response.toString();
+
+            // If successful (status 200) extract message content
+            if (status == 200) {
+                JSONObject json = new JSONObject(responseText);
+                JSONArray choices = json.optJSONArray("choices");
+
+                if (choices == null || choices.isEmpty()) {
+                    return "(No response from API)";
+                }
+
+                // Get first choice and message text
+                JSONObject message = choices.getJSONObject(0).getJSONObject("message");
+                return message.optString("content", "(Empty message)").trim();
+
+            } else {
+                // If not successful try to parse error message
+                try {
+                    JSONObject errJson = new JSONObject(responseText);
+                    JSONObject errorObj = errJson.optJSONObject("error");
+                    if (errorObj != null && errorObj.has("message")) {
+                        return errorObj.getString("message");
+                    }
+                } catch (Exception ignored) {}
+
+                // Message if no JSON error
+                return "API error (" + status + ")";
+            }
+
+            // No internet connection
+        } catch (UnknownHostException e) {
+            return "No internet connection.";
+
+            // Other IO errors (timeouts or refused connections)
+        } catch (IOException e) {
+            if (e.getMessage() != null && (e.getMessage().contains("timed out") || e.getMessage().contains("refused"))) {
+                return "⚠️ Network error: Unable to reach the API server (" + e.getMessage() + ")";
+            }
+            throw e; // rethrow for anything else
         }
     }
 }
