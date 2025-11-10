@@ -122,7 +122,7 @@ public class ChatGPTApiClient {
             // Other IO errors (timeouts or refused connections)
         } catch (IOException e) {
             if (e.getMessage() != null && (e.getMessage().contains("timed out") || e.getMessage().contains("refused"))) {
-                return "⚠️ Network error: Unable to reach the API server (" + e.getMessage() + ")";
+                return "Network error. Unable to reach the API server (" + e.getMessage() + ")";
             }
             throw e; // rethrow for anything else
         }
